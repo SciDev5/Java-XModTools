@@ -11,12 +11,11 @@ public class TestMain {
 
 	public static void main(String[] args) throws Exception {
 		
-		String name = "TEST3";
+		String[] files = new String[] {"Example Songs/milky.xm","Example Songs/sv_ttt.xm","other stuff/dev/TEST4.xm"};
+		int i = 1;
 		
-		File root = new File("C:/Users/Joey/Desktop/Art/milkytracker-1.02.00/");
-		//File dir = new File(root,"Example Songs/");
-		File dir = new File(root,"other stuff/dev/");
-		Song song = SongData.loadFromFile(new File(dir,name+".xm"));
+		File root = new File("D:/Art/milkytracker-1.02.00/");
+		Song song = SongData.loadFromFile(new File(root,files[i]));
 		
 		
 		PlayerThread player = new PlayerThread();
@@ -26,7 +25,8 @@ public class TestMain {
 		
 		player.start();
 
-		Thread.sleep(10000);
+		System.in.read();
+		
 		player.end();
 	}
 

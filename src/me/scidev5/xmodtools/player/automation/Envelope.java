@@ -28,8 +28,10 @@ public class Envelope {
 	public void addPoint(Point point) {
 		if (point == null) throw new IllegalArgumentException("New envelope point was null.");
 		if (this.numPoints >= Constants.MAX_ENV_POINTS) new IllegalArgumentException("Too many envelope points; max: "+Constants.MAX_ENV_POINTS);
-		if (point.x <= this.points[this.numPoints-1].x) new IllegalArgumentException("New envelope point is at or before the last point.");
-		
+		if (this.numPoints > 0) {
+			if (point.x <= this.points[this.numPoints-1].x) new IllegalArgumentException("New envelope point is at or before the last point.");
+			else if (point.x != 0) new IllegalArgumentException("First envelope point was not a time 0.");
+		}
 		this.points[this.numPoints++] = point;
 	}
 	

@@ -58,8 +58,8 @@ public enum EffectType {
 	SET_GLOBAL_VOLUME(16),
 	GLOBAL_VOLUME_SLIDE(17);
 	
-	private final int id;
-	private final int dataId;
+	public final int id;
+	public final int dataId;
 	private EffectType(int id) {
 		this.id = id;
 		this.dataId = -1;

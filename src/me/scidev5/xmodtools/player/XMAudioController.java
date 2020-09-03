@@ -5,8 +5,6 @@ import java.util.List;
 
 import javax.sound.sampled.AudioFormat;
 
-import me.scidev5.xmodtools.Constants;
-import me.scidev5.xmodtools.data.Instrument;
 import me.scidev5.xmodtools.data.Pattern;
 import me.scidev5.xmodtools.data.Pattern.PatternData;
 import me.scidev5.xmodtools.data.Song;
@@ -73,25 +71,7 @@ public class XMAudioController {
 				XMAudioChannel channel = this.channels.get(i);
 				PatternData data = pattern.getData(this.state.row, i);
 				
-				Instrument instrument = this.song.getInstrument(data.instrument-1);
-				boolean noteValid = data.note >= Constants.NOTE_FIRST && data.note < Constants.NOTE_FIRST + Constants.NOTE_COUNT;
-				
-				if (data.instrument > 0 && instrument == null)
-					channel.cut();
-				else if (!noteValid && instrument != null)
-					channel.resetNote();
-				else if (channel.canNotePlayImmediately(data)) {
-					if (instrument != null)
-						channel.playNote(data.note-Constants.NOTE_FIRST, instrument);
-					else 
-						channel.switchNote(data.note-Constants.NOTE_FIRST);
-				} else if (data.note == Constants.NOTE_KEYOFF)
-					channel.noteOff();
-				else if (channel.isNotePorta(data) && channel.hasSample() && data.instrument > 0)
-					channel.resetNote();
-				
-				channel.runVolumeColumn(data.volume);
-				channel.runEffect(data.effectType, data.effectData);
+				channel.runRow(data);
 				this.runGlobalEffect(data.effectType, data.effectData);
 			}
 
@@ -137,6 +117,22 @@ public class XMAudioController {
 	}
 	
 	private void runGlobalEffect(byte effectType, byte effectData) {
+		EffectType type = EffectType.get(effectType, effectData);
+		
+		switch (type) {
+
+		case SET_TEMPO: break;
+		case JUMP_TO_ORDER: break;
+		case DELAY_ROW: break;
+		case PATTERN_LOOP: break;
+		case PATTERN_BREAK: break;
+		case SET_GLOBAL_VOLUME: break;
+		case GLOBAL_VOLUME_SLIDE: break;
+		case GLISSANDO_CONTROL: break;
+		
+		default:
+			break;
+		}
 		// TODO
 	}
 	
@@ -150,7 +146,10 @@ public class XMAudioController {
 
 		private int bpm = 125;
 		private int speed = 6;
-		// TODO
+		
+		// EFFECT DATA 
+		
+		// add memory for global volume slide
 		
 		public State(Song song) {
 			// TODO

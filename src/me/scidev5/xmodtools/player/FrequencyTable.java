@@ -2,22 +2,38 @@ package me.scidev5.xmodtools.player;
 
 public enum FrequencyTable {
 	LINEAR((int trueNote, double fineTune) -> {
-		double period = 7680 - (trueNote * 64) - (fineTune / 2.0);
+		return 7680 - (trueNote * 64) - (fineTune / 2.0);
+	}, (double period) -> {
 		return 8363 * Math.pow(2.0,((4608 - period) / 768.0));
 	});
 	// TODO Amiga
 	
-	
-	private Calculate calculateFunction;
-	private FrequencyTable(Calculate calculateFunction) {
-		this.calculateFunction = calculateFunction;
+
+	private CalculatePeriod calculatePeriodFunction;
+	private CalculateSampleRate calculateSampleRateFunction;
+	private FrequencyTable(CalculatePeriod calculatePeriodFunction, CalculateSampleRate calculateSampleRateFunction) {
+		this.calculatePeriodFunction = calculatePeriodFunction;
+		this.calculateSampleRateFunction = calculateSampleRateFunction;
 	}
-	public double apply(int trueNote, byte fineTune) {
-		return this.calculateFunction.apply(trueNote, fineTune);
+	public double calculateSampleRate(int trueNote, byte fineTune) {
+		return this.calculateSampleRateFunction.apply(this.calculatePeriod(trueNote, fineTune));
 	}
-	
+	public double calculateSampleRate(int trueNote, byte fineTune, double pitchBend) {
+		return this.calculateSampleRateFunction.apply(this.calculatePeriod(trueNote, fineTune, pitchBend));
+	}
+	public double calculatePeriod(int trueNote, byte fineTune) {
+		return this.calculatePeriodFunction.apply(trueNote, fineTune);
+	}
+	public double calculatePeriod(int trueNote, byte fineTune, double pitchBend) {
+		return this.calculatePeriodFunction.apply(trueNote, fineTune) + pitchBend;
+	}
+
 	@FunctionalInterface
-	private interface Calculate {
+	private interface CalculatePeriod {
 		public double apply(int trueNote, double fineTune);
+	}
+	@FunctionalInterface
+	private interface CalculateSampleRate {
+		public double apply(double period);
 	}
 }

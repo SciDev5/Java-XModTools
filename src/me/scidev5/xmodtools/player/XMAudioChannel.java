@@ -1,5 +1,7 @@
 package me.scidev5.xmodtools.player;
 
+import java.util.Arrays;
+
 import me.scidev5.xmodtools.Constants;
 import me.scidev5.xmodtools.data.Instrument;
 import me.scidev5.xmodtools.data.Pattern.PatternData;
@@ -21,7 +23,7 @@ public class XMAudioChannel {
 
 	private byte fineTune = 0;
 	private int note = 0;
-	private int pitchBend = 0;
+	private double pitchBend = 0;
 	private boolean isHeld = false;
 
 	private float lastVolume = 0;
@@ -36,15 +38,71 @@ public class XMAudioChannel {
 	private double lastSampleValue = 0;
 	private boolean justCutIn = false;
 	
+	// EFFECT DATA
+
+	private int memory_portaUp = 0;
+	private int memory_portaDown = 0;
+	private int memory_portaUpFine = 0;
+	private int memory_portaDownFine = 0;
+	private int memory_portaUpExtraFine = 0;
+	private int memory_portaDownExtraFine = 0;
+	private int memory_tonePorta = 0;
+	
+	private int memory_vibratoSpeed = 0;
+	private int memory_vibratoDepth = 0;
+	
+	private int memory_tremoloSpeed = 0;
+	private int memory_tremoloDepth = 0;
+
+	private int memory_volumeSlide = 0;
+	private int memory_volumeSlideFine = 0;
+
+	private int memory_panningSlide = 0;
+	
+	private int memory_sampleOffset = 0;
+
+	private int memory_retriggerDelay = 0;
+	private int memory_retriggerMode = 8;
+
+	private int memory_tremor = 0;
+
+	private int portaNoteAmount = 0;
+	private int portaNotePower = 0;
+	private int portaNoteTarget = -1;
+	private int portaTickAmount = 0;
+	
+	private int volumeSlideAmount = 0;
+	private int panningSlideAmount = 0;
+	
+	private int cutTick = -1;
+	private int keyOffTick = -1;
+	private int playTick = -1;
+	private PatternData playRow = null;
+
+	private int retriggerCounter = -1;
+	private int retriggerMode = -1;
+	private boolean retriggerEnabled = false;
+
+	private int tremorOnTicks = 1;
+	private int tremorOffTicks = 0;
+	private boolean tremorMute = false;
+	private int tremorCounter = 0;
+	
+	private int arpIndex = 0;
+	private final int[] arpNotes;
+	
+	
 	public XMAudioChannel(XMAudioController controller) {
 		this.controller = controller;
+		this.arpNotes = new int[3];
+		Arrays.fill(this.arpNotes, 0);
 	}
 	
 	public float getPanning() {
-		float value = this.channelPanning;
+		float value = this.channelPanning / 128.0f - 1f;
 		
 		if (this.panningEnv != null)
-			Math.min(1, Math.max(-1, this.channelPanning + (1 - Math.abs(this.channelPanning)) * this.panningEnv.get()));
+			Math.min(1, Math.max(-1, value + (1 - Math.abs(value)) * (this.panningEnv.get() / (float)0x20 - 1)));
 		
 		float deltaPanning = value-this.lastPanning;
 		this.lastPanning += Math.signum(deltaPanning) * (this.justCutIn?Math.abs(deltaPanning):Math.min(2*Constants.VOLUME_SMOOTHING_FACTOR, Math.abs(deltaPanning)));
@@ -56,6 +114,9 @@ public class XMAudioChannel {
 		
 		if (this.volumeEnv != null)
 			value *= this.volumeEnv.get() / (float)0x40;
+		
+		if (this.tremorMute)
+			value = 0;
 		
 		float deltaVolume = value-this.lastVolume;
 		this.lastVolume += Math.signum(deltaVolume) * Math.min(this.justCutIn?Constants.VOLUME_CUT_FACTOR:Constants.VOLUME_SMOOTHING_FACTOR, Math.abs(deltaVolume));
@@ -71,7 +132,11 @@ public class XMAudioChannel {
 		}
 		float volume = this.getVolume();
 		
-		double sampleDelay = FrequencyTable.LINEAR.apply(this.note, this.fineTune)/this.controller.format.getSampleRate();
+		int arpNote = 0;
+		if (arpIndex < arpNotes.length && arpIndex > 0)
+			arpNote = arpNotes[arpIndex];
+
+		double sampleDelay = FrequencyTable.LINEAR.calculateSampleRate(this.note + arpNote, this.fineTune, this.pitchBend)/this.controller.format.getSampleRate();
 		
 		SampleInterpolation interpolation = SampleInterpolation.LINEAR;
 		
@@ -104,7 +169,6 @@ public class XMAudioChannel {
 	}
 	
 	public void tick(int tick) {
-		this.tickVolumeColumn(tick);
 		this.tickEffects(tick);
 		
 		this.tickEnvelopes();
@@ -128,21 +192,416 @@ public class XMAudioChannel {
 		
 	}
 	private void tickEffects(int tick) {
-		// TODO
-	}
-	private void tickVolumeColumn(int tick) {
-		// TODO
+		if (this.sample == null) return;
+		
+		FrequencyTable ftab = FrequencyTable.LINEAR;
+		
+		if (tick != 0) {
+			this.pitchBend -= this.portaTickAmount;
+			
+			double currentPeriod = this.pitchBend + ftab.calculatePeriod(this.note, this.fineTune);
+			double deltaPitchBend = ftab.calculatePeriod(this.portaNoteTarget, this.sample.getFineTune()) - currentPeriod;
+			this.pitchBend += Math.signum(deltaPitchBend) * Math.min(Math.abs(deltaPitchBend), this.portaNoteAmount * this.portaNotePower);
+
+			this.channelVolume = Math.max(0, Math.min(0x40, this.channelVolume + this.volumeSlideAmount));
+			this.channelPanning = Math.max(0, Math.min(0xff, this.channelPanning + this.panningSlideAmount));
+
+			
+			if (this.tremorOffTicks == 0) {
+				this.channelVolume = this.tremorMute ? 0 : this.channelVolume;
+				this.tremorMute = false;
+			} else
+				this.tremorMute = this.tremorCounter >= this.tremorOnTicks;
+			
+			this.tremorCounter = (this.tremorCounter + 1) % (this.tremorOnTicks+this.tremorOffTicks);
+		}
+		
+		if (tick == this.cutTick) this.cut();
+		if (tick == this.keyOffTick) this.noteOff();
+		if (tick == this.playTick && this.playRow != null) this.runRow(this.playRow, true);
+		
+		this.arpIndex = (this.arpIndex + 1) % this.arpNotes.length;
+		
+		if (this.retriggerEnabled) {
+			this.retriggerCounter ++;
+			if (this.retriggerCounter == this.memory_retriggerDelay) {
+				int volume = this.channelVolume;
+				int pan = this.channelPanning;
+				if (this.retriggerMode == -1)
+					this.resetNote();
+				this.channelPanning = pan;
+				this.resetSample();
+				
+				switch (retriggerMode) {
+				case 1: volume -= 1; break;
+				case 2: volume -= 2; break;
+				case 3: volume -= 4; break;
+				case 4: volume -= 8; break;
+				case 5: volume -= 16; break;
+				case 6: volume *= 0.66666666667f; break;
+				case 7: volume *= 0.5f; break;
+				case 8: break;
+				case 9: volume += 1; break;
+				case 10: volume += 2; break;
+				case 11: volume += 4; break;
+				case 12: volume += 8; break;
+				case 13: volume += 16; break;
+				case 14: volume *= 1.5; break;
+				case 15: volume *= 2; break;
+				}
+				this.channelVolume = Math.max(0, Math.min(0x40, volume));
+				
+				this.retriggerCounter = 0;
+			}
+		} else 
+			this.retriggerCounter = -1;
+
+		
+		// TODO LFO
 	}
 
-	public void runEffect(byte effectType, byte effectData) {
-		// TODO
+	public void runEffect(PatternData dataRow) {
+		EffectType type = EffectType.get(dataRow.effectType, dataRow.effectData);
+		int data = dataRow.effectData & 0xff;
+		
+		if (type.dataId != -1)
+			data = data & 0xf;
+		
+		switch (type) {
+		// Arpeggio
+		case ARPEGGIO: 
+			int noteA = data & 0xf;
+			int noteB = (data>>4) & 0xf;
+			this.arpNotes[0] = 0;
+			this.arpNotes[1] = noteA;
+			this.arpNotes[2] = noteB;
+			break;
+		
+		// Portamento
+		case PORTA_UP: 
+			if (data == 0) data = this.memory_portaUp;
+			else           this.memory_portaUp = data;
+			
+			this.portaTickAmount = 4*data;
+			break;
+		case PORTA_DOWN: 
+			if (data == 0) data = this.memory_portaDown;
+			else           this.memory_portaDown = data;
+			
+			this.portaTickAmount = -4*data;
+			break;
+		case PORTA_UP_FINE: 
+			if (data == 0) data = this.memory_portaUpFine;
+			else           this.memory_portaUpFine = data;
+			
+			this.pitchBend -= 4*data;
+			break;
+		case PORTA_DOWN_FINE: 
+			if (data == 0) data = this.memory_portaDownFine;
+			else           this.memory_portaDownFine = data;
+			
+			this.pitchBend += 4*data;
+			break;
+		case PORTA_EXTRA_FINE_UP: 
+			if (data == 0) data = this.memory_portaUpExtraFine;
+			else           this.memory_portaUpExtraFine = data;
+			
+			this.pitchBend -= data;
+			break;
+		case PORTA_EXTRA_FINE_DOWN: 
+			if (data == 0) data = this.memory_portaDownExtraFine;
+			else           this.memory_portaDownExtraFine = data;
+			
+			this.pitchBend += data;
+			break;
+		case PORTA_NOTE: 
+			if (dataRow.note >= Constants.NOTE_FIRST && dataRow.note < Constants.NOTE_FIRST + Constants.NOTE_COUNT)
+				this.portaNoteTarget = this.sample.getRelativeNote() + (dataRow.note - Constants.NOTE_FIRST);
+
+			if (data == 0) data = this.memory_tonePorta;
+			else           this.memory_tonePorta = data;
+			
+			if (this.portaNoteTarget != -1) {
+				this.portaNotePower = 4*data;
+				this.portaNoteAmount++;
+			}
+			break;
+		
+		// TODO LFO
+		case VIBRATO: break;
+		case TREMOLO: break;
+		
+		// Panning
+		case SET_PANNING: 
+			this.channelPanning = data;
+			break;
+		case PANNING_SLIDE: 
+			if (data == 0) data = this.memory_panningSlide;
+			else           this.memory_panningSlide = data;
+			
+			int up_PAN = data & 0xf;
+			int down_PAN = (data >> 4) & 0xf;
+			
+			this.panningSlideAmount += up_PAN > 0 ? up_PAN : down_PAN;
+			break;
+		case SET_PANNING_EXTCMD: 
+			this.channelPanning = 0x11 * data;
+			break;
+		
+		// Volume
+		case SET_VOLUME: 
+			this.channelVolume = Math.min(0x40, data);
+			break;
+		case VOLUME_SLIDE: 
+			if (data == 0) data = this.memory_volumeSlide;
+			else           this.memory_volumeSlide = data;
+
+			int up_VOL = data & 0xf;
+			int down_VOL = (data >> 4) & 0xf;
+			
+			this.volumeSlideAmount += up_VOL > 0 ? up_VOL : down_VOL;
+			break;
+		case VOLUME_SLIDE_FINE_UP: 
+			if (data == 0) data = this.memory_volumeSlideFine;
+			else           this.memory_volumeSlideFine = data;
+			
+			this.channelVolume = Math.max(0, Math.min(0x40, this.channelVolume + data));
+			break;
+		case VOLUME_SLIDE_FINE_DOWN: 
+			if (data == 0) data = this.memory_volumeSlideFine;
+			else           this.memory_volumeSlideFine = data;
+			
+			this.channelVolume = Math.max(0, Math.min(0x40, this.channelVolume - data));
+			break;
+		
+		// Volume slide combos
+		case VOLUME_SLIDE_CONT_PORTA: 
+			if (dataRow.note >= Constants.NOTE_FIRST && dataRow.note < Constants.NOTE_FIRST + Constants.NOTE_COUNT)
+				this.portaNoteTarget = this.sample.getRelativeNote() + (dataRow.note - Constants.NOTE_FIRST);
+
+			if (this.portaNoteTarget != -1) {
+				this.portaNotePower = 4*this.memory_tonePorta;
+				this.portaNoteAmount++;
+			}
+
+			if (data == 0) data = this.memory_volumeSlide;
+			else           this.memory_volumeSlide = data;
+
+			int up_PORTAVOL = data & 0xf;
+			int down_PORTAVOL = (data >> 4) & 0xf;
+			
+			this.volumeSlideAmount += up_PORTAVOL > 0 ? up_PORTAVOL : down_PORTAVOL;
+			break;
+		case VOLUME_SLIDE_CONT_VIBRATO: break; // TODO LFO
+		case VOLUME_SLIDE_AND_RETRIGGER_NOTE:
+			this.retriggerEnabled = true;
+			if ((data & 0xf) != 0) this.memory_retriggerDelay = data & 0xf;
+			if (((data>>4) & 0xf) != 0) this.memory_retriggerMode = (data>>4) & 0xf;
+			this.retriggerMode = this.memory_retriggerMode;
+			break;
+		
+		// Note Things
+		case CUT: 
+			this.cutTick = data; 
+			break;
+		case DELAY_NOTE: 
+			this.playTick = data;
+			this.playRow = dataRow;
+			break;
+		case KEY_OFF: 
+			this.keyOffTick = data;
+			break;
+		
+		case RETRIGGER_NOTE: 
+			if (data != 0) {
+				this.retriggerEnabled = true;
+				this.memory_retriggerDelay = data;
+			} else {
+				int volume = this.channelVolume;
+				int pan = this.channelPanning;
+				this.resetNote();
+				this.channelPanning = pan;
+				this.channelVolume = volume;
+				this.resetSample();
+			}
+			break;
+		case SAMPLE_OFFSET: 
+			if (this.sample != null && dataRow.note >= Constants.NOTE_FIRST && dataRow.note < Constants.NOTE_FIRST + Constants.NOTE_COUNT) {
+				if (data == 0) data = this.memory_sampleOffset;
+				else           this.memory_sampleOffset = data;
+				
+				this.sampleNumber = data * 0x100;
+				this.sampleFraction = 0f;
+			}
+			break;
+		case SET_ENVELOPE_FRAME: 
+			if (this.volumeEnv != null) {
+				this.volumeEnv.setFrame(data);
+				if (this.volumeEnv.getSustainEnabled() && this.panningEnv != null)
+					this.panningEnv.setFrame(data);
+			}
+			break;
+		case SET_FINETUNE: 
+			this.fineTune = (byte) (data - 128);
+			break;
+		
+		// Other
+		case VIBRATO_CONTROL: break;
+		case TREMOLO_CONTROL: break;
+		case TREMOR: 
+			if (data == 0) data = this.memory_tremor;
+			else           this.memory_tremor = data;
+
+			this.tremorOnTicks = ((data>>4) & 0xf) + 1;
+			this.tremorOffTicks = (data & 0xf) + 1;
+			break;
+		
+		default:
+			break;
+		
+		}
+		
 	}
-	public void runVolumeColumn(byte volumeByte) {
-		if (volumeByte >= 0x10 && volumeByte < 0x20)
-			this.channelVolume = volumeByte - 0x10;
-		// TODO
+	public void runVolumeColumn(PatternData data) {
+		int volume = 0xff & data.volume;
+
+		int upperNibble = (volume >> 4) & 0xf;
+		int lowerNibble = volume & 0xf;
+		
+		if (volume >= 0x10 && volume <= 0x40) {
+		}
+		switch (upperNibble) {
+		case 0x01:
+		case 0x02:
+		case 0x03:
+		case 0x04:
+		case 0x05: // Set Volume
+			this.channelVolume = Math.min(volume - 0x10, 0x40);
+			break;
+			
+		case 0x06: // Volume slide down.
+			this.volumeSlideAmount -= lowerNibble; 
+			break;
+		case 0x07: // Volume slide up.
+			this.volumeSlideAmount += lowerNibble; 
+			break;
+			
+		case 0x08: // Fine volume slide down.
+			this.channelVolume = Math.max(0, this.channelVolume - lowerNibble); 
+			break;
+		case 0x09: // Fine volume slide up.
+			this.channelVolume = Math.min(0x40, this.channelVolume + lowerNibble);
+			break;
+			
+		case 0x0A: // TODO Set vibrato speed. (param shared with effect column)
+			break;
+		case 0x0B: // TODO Run vibrato. (set depth) (param shared with effect column)
+			break;
+			
+		case 0x0C: // Set panning
+			this.channelPanning = 0x11 * lowerNibble;
+			break;
+		case 0x0D: // Pan left
+			this.panningSlideAmount -= lowerNibble;
+			break;
+		case 0x0E: // Pan right
+			this.panningSlideAmount += lowerNibble;
+			break;
+			
+		case 0x0F: // Portamento to note
+
+			if (data.note >= Constants.NOTE_FIRST && data.note < Constants.NOTE_FIRST + Constants.NOTE_COUNT)
+				this.portaNoteTarget = this.sample.getRelativeNote() + (data.note - Constants.NOTE_FIRST);
+
+			lowerNibble *= 0x10;
+			
+			if (lowerNibble == 0) lowerNibble = this.memory_tonePorta;
+			else                  this.memory_tonePorta = lowerNibble;
+			
+			if (this.portaNoteTarget != -1) {
+				this.portaNotePower = 4*lowerNibble;
+				this.portaNoteAmount++;
+			}
+			break;
+			
+			
+		}
+	}
+	
+	public void resetEffectData() {
+		this.portaNoteAmount = 0;
+		this.portaTickAmount = 0;
+		this.portaNotePower = 0;
+
+		this.panningSlideAmount = 0;
+		this.volumeSlideAmount = 0;
+		
+		this.arpIndex = 0;
+		Arrays.fill(this.arpNotes, 0);
+		this.arpNotes[0] = 0;
+
+		this.cutTick = -1;
+		this.keyOffTick = -1;
+		this.playTick = -1;
+		this.playRow = null;
+		
+		this.retriggerEnabled = false;
+		this.retriggerMode = -1;
+
+		this.tremorOnTicks = 1;
+		this.tremorOffTicks = 0;
 	}
 
+	
+	public void runRow(PatternData data, boolean isLateTrigger) {
+		Instrument instrument = this.controller.song.getInstrument(data.instrument-1);
+		boolean noteValid = data.note >= Constants.NOTE_FIRST && data.note < Constants.NOTE_FIRST + Constants.NOTE_COUNT;
+		
+		if (data.instrument > 0 && (noteValid || data.note == Constants.NOTE_KEYOFF) && instrument == null)
+			this.cut();
+		else if (!noteValid && instrument != null) {
+			if (isLateTrigger || this.canNotePlayImmediately(data))
+				this.resetNote();
+		} else if ((noteValid || data.note == Constants.NOTE_KEYOFF) && (isLateTrigger || this.canNotePlayImmediately(data))) {
+			if (data.note == Constants.NOTE_KEYOFF)
+				this.noteOff();
+			else if (instrument != null)
+				this.playNote(data.note-Constants.NOTE_FIRST, instrument);
+			else 
+				this.switchNote(data.note-Constants.NOTE_FIRST);
+		} else if (this.isNotePorta(data) && this.hasSample() && data.instrument > 0)
+			this.resetNote();
+		
+		if (!isLateTrigger) {
+			this.resetEffectData();
+			this.runVolumeColumn(data);
+			this.runEffect(data);
+		} else {
+			int volume = data.volume & 0xff;
+			// Only run set volume and fine volume slide.
+			if (volume >= 0x10 && volume < 0x50 || volume >= 0x80 && volume < 0xA0)
+				this.runVolumeColumn(data);
+			
+			EffectType type = EffectType.get(data.effectType, data.effectData);
+			if (type == EffectType.SET_PANNING || 
+				type == EffectType.SET_PANNING_EXTCMD || 
+				type == EffectType.SET_FINETUNE || 
+				type == EffectType.SET_VOLUME || 
+				type == EffectType.SAMPLE_OFFSET || 
+				type == EffectType.PORTA_DOWN_FINE || 
+				type == EffectType.PORTA_EXTRA_FINE_DOWN ||
+				type == EffectType.PORTA_EXTRA_FINE_UP || 
+				type == EffectType.PORTA_UP_FINE || 
+				type == EffectType.VOLUME_SLIDE_FINE_DOWN || 
+				type == EffectType.VOLUME_SLIDE_FINE_UP) {
+				this.runEffect(data);
+			}
+		}
+	}
+	public void runRow(PatternData data) {
+		this.runRow(data, false);
+	}
+	
 	/**
 	 * Start a note playing on a certain instrument.
 	 * @param note The note to play.
@@ -166,6 +625,19 @@ public class XMAudioChannel {
 
 		this.note = note + this.sample.getRelativeNote();
 		this.fineTune = this.sample.getFineTune();
+		this.pitchBend = 0;
+		this.sampleNumber = 0;
+		this.sampleFraction = 0f;
+		this.lastSampleValue = this.currentSampleValue;
+		this.lastVolume = 0f;
+		this.justCutIn = true;
+	}
+	/**
+	 * Reset the sample to its start.
+	 */
+	public void resetSample() {
+		if (this.sample == null) return;
+
 		this.sampleNumber = 0;
 		this.sampleFraction = 0f;
 		this.lastSampleValue = this.currentSampleValue;
@@ -218,10 +690,9 @@ public class XMAudioChannel {
 	 * @return If a note will play immediately given the PatternData data.
 	 */
 	public boolean canNotePlayImmediately(PatternData data) {
-		return data.note >= Constants.NOTE_FIRST && data.note < Constants.NOTE_FIRST+Constants.NOTE_COUNT && 
-			data.effectType != 3 && data.effectType != 5 && 
+		return data.effectType != 3 && data.effectType != 5 && 
 			!(data.effectType == 20 && data.effectData == 0) && 
-			!(data.effectType == 14 && (data.effectData == 0xC0 || (data.effectData & 0xF0) == 0xD0 && (data.effectData & 0xF) > 0)) && 
+			!(data.effectType == 14 && ((data.effectData & 0xff) == 0xC0 || (data.effectData & 0xf0) == 0xd0 && (data.effectData & 0xf) > 0)) && 
 			(data.volume & 0xF0) != 0xF0;
 	}
 	/**
@@ -230,7 +701,7 @@ public class XMAudioChannel {
 	 * @return If the note playing will result in note to note portamento.
 	 */
 	public boolean isNotePorta(PatternData data) {
-		return data.note > 0 && data.note < 97 && 
+		return data.note >= Constants.NOTE_FIRST && data.note < Constants.NOTE_FIRST + Constants.NOTE_COUNT && 
 	    	(data.effectType == 3 || data.effectType == 5 || (data.volume & 0xF0) == 0xF0);
 	}
 	
