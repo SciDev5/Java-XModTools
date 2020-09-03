@@ -23,7 +23,7 @@ public class Sample {
 	 * @param data The PCM samples.
 	 */
 	public Sample(byte[] data) {
-		assert data != null : "sample data was null";
+		if (data == null) throw new IllegalArgumentException("sample data was null");
 		
 		this.sampleData8 = data;
 		this.is16Bit = false;
@@ -33,7 +33,7 @@ public class Sample {
 	 * @param data The PCM samples.
 	 */
 	public Sample(short[] data) {
-		assert data != null : "sample data was null";
+		if (data == null) throw new IllegalArgumentException("sample data was null");
 		
 		this.sampleData16 = data;
 		this.is16Bit = true;
@@ -79,10 +79,10 @@ public class Sample {
 		
 		if (loop && i > loopStart) {
 			long samplesAfterLoopStart = i - loopStart;
-			long loops = samplesAfterLoopStart / loopLen;
+			long loops = samplesAfterLoopStart / (loopLen+1);
 			boolean reflectDirection = this.sampleLoop == LoopType.PING_PONG ? loops % 2 == 1 : false;
 			
-			int trueI = (int) (loopStart + (reflectDirection ? loopLen - 1 - samplesAfterLoopStart % loopLen : samplesAfterLoopStart % loopLen));
+			int trueI = (int) (loopStart + (reflectDirection ? loopLen - samplesAfterLoopStart % (loopLen+1) : samplesAfterLoopStart % (loopLen+1)));
 			return this.sampleData8[trueI];
 		} else if (i < len) {
 			return this.sampleData8[(int) i];
@@ -124,8 +124,8 @@ public class Sample {
 
 	// SETTERS
 	
-	private int clamp(int value, int lower, int upper) { assert upper >= lower; return value>upper?upper:value<lower?lower:value; }
-	private long clamp(long value, long lower, long upper) { assert upper >= lower; return value>upper?upper:value<lower?lower:value; }
+	private int clamp(int value, int lower, int upper) { return value>upper?upper:value<lower?lower:value; }
+	private long clamp(long value, long lower, long upper) { return value>upper?upper:value<lower?lower:value; }
 	
 	/**
 	 * Clamp all values in the builder back into their intended range.
@@ -203,7 +203,7 @@ public class Sample {
 	 * @return this sample.
 	 */
 	public Sample setData(byte[] data) {
-		assert data != null : "sample data was null";
+		if (data == null) throw new IllegalArgumentException("sample data was null");
 		
 		this.sampleData8 = data;
 		this.is16Bit = false;
@@ -216,7 +216,7 @@ public class Sample {
 	 * @return this sample.
 	 */
 	public Sample setData(short[] data) {
-		assert data != null : "sample data was null";
+		if (data == null) throw new IllegalArgumentException("sample data was null");
 		
 		this.sampleData16 = data;
 		this.is16Bit = true;

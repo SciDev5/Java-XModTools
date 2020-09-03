@@ -1,9 +1,9 @@
 package me.scidev5.xmodtools.player;
 
 public enum FrequencyTable {
-	LINEAR((int trueNote, byte fineTune) -> {
+	LINEAR((int trueNote, double fineTune) -> {
 		double period = 7680 - (trueNote * 64) - (fineTune / 2.0);
-		return 8363 * Math.pow(2f,((4608 - period) / 768.0));
+		return 8363 * Math.pow(2.0,((4608 - period) / 768.0));
 	});
 	// TODO Amiga
 	
@@ -18,6 +18,6 @@ public enum FrequencyTable {
 	
 	@FunctionalInterface
 	private interface Calculate {
-		public double apply(int trueNote, byte fineTune);
+		public double apply(int trueNote, double fineTune);
 	}
 }

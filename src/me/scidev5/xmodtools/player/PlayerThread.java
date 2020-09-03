@@ -14,23 +14,26 @@ public class PlayerThread extends Thread {
 	
 	private boolean running = true;
 	private boolean ended = false;
+	private AudioFormat audioFormat = null;
 	
-	private PlayerController controller = null;
+	private XMAudioController controller = null;
 	
 	public PlayerThread() {
-		
+		this.audioFormat = new AudioFormat(SAMPLE_RATE,16,2,true,false);
 	}
 	
-	public void setController(PlayerController controller) {
+	public void setController(XMAudioController controller) {
 		this.controller = controller;
+	}
+	
+	public AudioFormat getAudioFormat() {
+		return this.audioFormat;
 	}
 	
 	@Override
 	public void run() {
 		try {
-			AudioFormat audioFormat = new AudioFormat(SAMPLE_RATE,16,2,true,false);
-			SourceDataLine sourceDataLine;
-			sourceDataLine = AudioSystem.getSourceDataLine(audioFormat);
+			SourceDataLine sourceDataLine = AudioSystem.getSourceDataLine(this.audioFormat);
 			byte[] buffer = new byte[4*FRAME_SIZE];
 			sourceDataLine.open();
 			sourceDataLine.start();
@@ -69,9 +72,9 @@ public class PlayerThread extends Thread {
 	}
 
 	private void transferFrame(short[] inDataL, short[] inDataR, byte[] buffer) {
-		assert inDataL.length == FRAME_SIZE;
-		assert inDataR.length == FRAME_SIZE;
-		assert buffer.length == FRAME_SIZE*4;
+		if (inDataL.length != FRAME_SIZE) throw new IllegalArgumentException();
+		if (inDataR.length != FRAME_SIZE) throw new IllegalArgumentException();
+		if (buffer.length != FRAME_SIZE*4) throw new IllegalArgumentException();
 		
 		final int volume = 1;
 		

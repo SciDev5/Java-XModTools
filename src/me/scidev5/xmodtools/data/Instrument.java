@@ -51,9 +51,17 @@ public class Instrument {
 		this.samples[index] = sample;
 	}
 
+	// GETTERS
+	
+
+	public int getNumSamples()    { return this.numSamples;  }
+	public int getFadeout()    { return this.volumeFadeout;  }
+	public Envelope getVolumeEnv()    { if (this.volumeEnv != null) return this.volumeEnv.copy(); else return null; }
+	public Envelope getPanningEnv()    { if (this.panningEnv != null) return this.panningEnv.copy(); else return null; }
+	
 	// SETTERS
 	
-	private int clamp(int value, int lower, int upper) { assert upper >= lower; return value>upper?upper:value<lower?lower:value; }
+	private int clamp(int value, int lower, int upper) { return value>upper?upper:value<lower?lower:value; }
 	
 	/**
 	 * Clamp all values in the builder back into their intended range.

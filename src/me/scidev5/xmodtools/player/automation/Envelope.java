@@ -8,7 +8,8 @@ public class Envelope {
 	
 	protected Point[] points;
 
-	protected int sustain = -1;
+	protected int sustain = 0;
+	private boolean sustainEnabled = false;
 	
 	protected int loopStart = 0;
 	protected int loopEnd = 0;
@@ -16,14 +17,18 @@ public class Envelope {
 	
 	protected int lastValue = 0;
 	
+	public Envelope() {
+		this.points = new Point[Constants.MAX_ENV_POINTS];
+	}
+	
 	/**
 	 * Add a point to the envelope.
 	 * @param point The point to add.
 	 */
 	public void addPoint(Point point) {
-		assert point != null : "New envelope point was null.";
-		assert this.numPoints < Constants.MAX_ENV_POINTS : "Too many envelope points; max: "+Constants.MAX_ENV_POINTS;
-		assert point.x > this.points[this.numPoints-1].x : "New envelope point is at or before the last point.";
+		if (point == null) throw new IllegalArgumentException("New envelope point was null.");
+		if (this.numPoints >= Constants.MAX_ENV_POINTS) new IllegalArgumentException("Too many envelope points; max: "+Constants.MAX_ENV_POINTS);
+		if (point.x <= this.points[this.numPoints-1].x) new IllegalArgumentException("New envelope point is at or before the last point.");
 		
 		this.points[this.numPoints++] = point;
 	}
@@ -34,11 +39,11 @@ public class Envelope {
 	 * @param i The index to set at.
 	 */
 	public void setPoint(Point point, int i) {
-		assert point != null : "New envelope point was null.";
-		assert i >= 0 && i < this.numPoints : "Index is out of bounds.";
-		if (i > 0)                assert this.points[i-1].x < point.x : "Envelope point is at or before the last point.";
-		else                      assert point.x == 0 :                 "First envelope point not set to be at time 0";
-		if (i < this.numPoints-1) assert this.points[i+1].x > point.x : "Envelope point is at or after the next point.";
+		if (point == null) throw new IllegalArgumentException("New envelope point was null.");
+		if (i < 0 || i >= this.numPoints) throw new IllegalArgumentException("Index is out of bounds.");
+		if (i > 0)                if (this.points[i-1].x >= point.x) throw new IllegalArgumentException("Envelope point is at or before the last point.");
+		else                      if (point.x != 0)                  throw new IllegalArgumentException("First envelope point not set to be at time 0");
+		if (i < this.numPoints-1) if (this.points[i+1].x <= point.x) throw new IllegalArgumentException("Envelope point is at or after the next point.");
 		
 		this.points[i] = point;
 	}
@@ -49,7 +54,7 @@ public class Envelope {
 	 * @return The point at index i.
 	 */
 	public Point getPoint(int i) {
-		assert i >= 0 && i < this.numPoints : "Index is out of bounds.";
+		if (i < 0 || i >= this.numPoints) throw new IllegalArgumentException("Index is out of bounds.");
 		return this.points[i];
 	}
 	
@@ -67,21 +72,31 @@ public class Envelope {
 	 * @return The result.
 	 */
 	public int calculate(boolean shouldSustain) {
+		if (this.numPoints == 0) {
+			this.lastValue = 0;
+			return this.lastValue;
+		}
+		
 		int i = 0;
-		for (; i < this.numPoints - 1; i++) {
+		for (; i < this.numPoints; i++) {
 			if (points[i].x == this.frame) {
-				if (this.loop && this.points[this.loopEnd].x == this.frame && this.points[this.loopStart].x < this.frame)
+				if (this.loop && this.loopEnd == i) {
 					this.frame = this.points[this.loopStart].x;
-				else if (!shouldSustain || i != this.sustain)
+					i = this.loopStart;
+				}
+				if (!shouldSustain || !this.sustainEnabled || i != this.sustain)
 					this.frame++;
 				
-				return points[i].y;
+				this.lastValue = this.points[i].y;
+				return this.lastValue;
 			}
-			if (points[i].x < this.frame && points[i+1].x > this.frame)
+			if (i == this.numPoints - 1)
+				break;
+			else if (points[i].x < this.frame && points[i+1].x > this.frame)
 				break;
 		}
 		
-		if (i == this.numPoints - 1) 
+		if (i == this.numPoints - 1)
 			return this.points[this.numPoints-1].y;
 		
 		float interpolate = (this.frame - points[i].x)/(float)(points[i+1].x - points[i].x);
@@ -114,20 +129,82 @@ public class Envelope {
 	
 	/**
 	 * Set the sustain point on the envelope. (Determines which point to stop at when holding a note)
-	 * @param sustain
+	 * @param enabled If the sustain point is enabled.
+	 * @param sustain The index of the point to hold at if sustain is enabled.
 	 */
-	public void setSustain(int sustain) {
+	public void setSustain(boolean enabled, int sustain) {
+		this.sustainEnabled = enabled;
 		this.sustain = Math.max(0, Math.min(sustain, this.numPoints-1));
+	}
+
+	/**
+	 * Get the index for sustain on the envelope.
+	 * @return The index of the point to hold at if sustain is enabled.
+	 */
+	public int getSustain() {
+		return this.sustain;
 	}
 	
 	/**
-	 * Disable sustain on the envelope. (sets sustain value to -1)
+	 * Get if the sustain point is enabled.
+	 * @return If sustain is enabled
 	 */
-	public void clearSustain() {
-		this.sustain = -1;
+	public boolean getSustainEnabled() {
+		return this.sustainEnabled;
+	}
+
+	/**
+	 * Get the index for loop start point.
+	 * @return The index of the point to restart a loop from.
+	 */
+	public int getLoopStart() {
+		return this.loopStart;
+	}
+	/**
+	 * Get the index for loop end point.
+	 * @return The index of the point to loop back from.
+	 */
+	public int getLoopEnd() {
+		return this.loopEnd;
+	}
+	/**
+	 * Get the index for loop start point.
+	 * @return The index of the point to restart a loop from.
+	 */
+	public boolean getLoopEnabled() {
+		return this.loop;
+	}
+
+	/**
+	 * Reset the envelope to its starting position.
+	 */
+	public void retrigger() {
+		this.frame = 0;
+		if (this.numPoints > 0)
+			this.lastValue = this.points[0].y;
 	}
 	
-	public class Point {
+	/**
+	 * Set the envelope's position.
+	 * @param frame The position to set.
+	 */
+	public void setFrame(int frame) {
+		this.frame = Math.max(0, frame);
+	}
+	
+	
+	public Envelope copy() {
+		Envelope env = new Envelope();
+		for (int i = 0; i < this.numPoints; i++) {
+			env.addPoint(this.points[i]);
+		}
+		env.setLoop(this.loop, this.loopStart, this.loopEnd);
+		env.setSustain(this.sustainEnabled, this.sustain);
+		return env;
+	}
+	
+	
+	public static class Point {
 		public final int x;
 		public final int y;
 		public Point(int x, int y) {

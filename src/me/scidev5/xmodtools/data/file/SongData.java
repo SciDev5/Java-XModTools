@@ -13,6 +13,7 @@ import me.scidev5.xmodtools.data.Pattern;
 import me.scidev5.xmodtools.data.Pattern.PatternData;
 import me.scidev5.xmodtools.data.Sample;
 import me.scidev5.xmodtools.data.Song;
+import me.scidev5.xmodtools.player.automation.Envelope;
 
 public class SongData {
 	
@@ -26,24 +27,28 @@ public class SongData {
 		
 		// ---- // HEADER // ---- //
 		
-		String moduleName = DataUtils.getString(dataIn, 20);
-		if (dataIn.get() != 0x1a) throw new Exception("byte at position 37 was not equal to $1a");
-		String trackerName = DataUtils.getString(dataIn, 20);
-		if (dataIn.getShort() != 0x0104) throw new Exception("XM Version not equal to $0104");
+		String moduleName = DataUtils.getString(data, 20);
+		if (data.get() != 0x1a) throw new Exception("byte at position 37 was not equal to $1a");
+		String trackerName = DataUtils.getString(data, 20);
+		if (data.getShort() != 0x0104) throw new Exception("XM Version not equal to $0104");
 		
-		final int songHeaderLength = dataIn.getInt(); // Header length (dealt with elsewhere).
+		final int songHeaderLength = data.getInt(); // Header length (dealt with elsewhere).
 
 		Song song = new Song();
 		song.setModuleName(moduleName);
 		song.setTrackerName(trackerName);
-		song.setSongLength(dataIn.getShort());
-		song.setSongLoopPos(dataIn.getShort());
-		song.setNumChannels(dataIn.getShort());
-		short numPatterns = dataIn.getShort();
-		short numInstruments = dataIn.getShort();
-		short flags = dataIn.getShort(); // TODO select frequency tables
+		song.setSongLength(data.getShort());
+		song.setSongLoopPos(data.getShort());
+		song.setNumChannels(data.getShort());
+		short numPatterns = data.getShort();
+		short numInstruments = data.getShort();
+		short flags = data.getShort(); // TODO select frequency tables
 		
-		song.setDefaultTempo(dataIn.getShort(),dataIn.getShort());
+		song.setDefaultTempo(data.getShort(),data.getShort());
+		
+		byte[] patternTable = new byte[256];
+		data.get(patternTable);
+		song.setPatternOrder(patternTable);
 		
 		data = sliceBuffer(data,60+songHeaderLength);
 
@@ -117,8 +122,6 @@ public class SongData {
 		String instrumentName = DataUtils.getString(data, 22);
 		data.get(); // Instrument type (not used).
 		
-		System.out.println(instrumentName);
-		
 		int numSamples = data.getShort() & 0xffff;
 		
 		if (numSamples > 0) {
@@ -151,15 +154,39 @@ public class SongData {
 
 			byte volumeEnvType = data.get();
 			byte panningEnvType = data.get();
+
+			// VOLUME ENV
+			Envelope volumeEnv = null;
+			if ((volumeEnvType & 0x01) != 0) {
+				volumeEnv = new Envelope();
+				for (int i = 0; i <  Math.min(Constants.MAX_ENV_POINTS, numVolumeEnvPoints); i++) {
+					volumeEnv.addPoint(new Envelope.Point(volumeEnvPoints[i*2+0] & 0xffff, volumeEnvPoints[i*2+1] & 0xffff));
+				}
+				volumeEnv.setSustain((volumeEnvType & 0x02) != 0, volumeSustain);
+				volumeEnv.setLoop((volumeEnvType & 0x04) != 0, volumeLoopStart, volumeLoopEnd);
+			}
+			instrument.setVolumeEnv(volumeEnv);
 			
-			// TODO assemble and add envelopes;
+			// VOLUME ENV
+			Envelope panningEnv = null;
+			if ((panningEnvType & 0x01) != 0) {
+				panningEnv = new Envelope();
+				for (int i = 0; i < Math.min(Constants.MAX_ENV_POINTS, numPanningEnvPoints); i++) {
+					panningEnv.addPoint(new Envelope.Point(panningEnvPoints[i*2+0] & 0xffff, panningEnvPoints[i*2+1] & 0xffff));
+				}
+				panningEnv.setSustain((panningEnvType & 0x02) != 0, panningSustain);
+				panningEnv.setLoop((panningEnvType & 0x04) != 0, panningLoopStart, panningLoopEnd);
+			}
+			instrument.setPanningEnv(panningEnv);
+			
+			// TODO AUTOVIBRATO
 			
 			int autoVibratoType = data.get() & 0xff;
 			int autoVibratoSweep = data.get() & 0xff;
 			int autoVibratoDepth = data.get() & 0xff;
 			int autoVibratoRate = data.get() & 0xff;
 			
-			// TODO assemble and add autovibrato;
+			//  OTHER STUFF
 			
 			short volumeFadeout = data.getShort();
 			instrument.setFadeout(volumeFadeout);
@@ -187,7 +214,7 @@ public class SongData {
 				byte volume = data.get();
 				byte fineTune = data.get();
 				byte type = data.get();
-				LoopType loopType = (type & 0x01) != 0 ? ((type & 0x02) != 0 ? LoopType.PING_PONG : LoopType.FORWARD) : LoopType.NONE;
+				LoopType loopType = (type & 0x02) != 0 ? LoopType.PING_PONG : ((type & 0x01) != 0 ? LoopType.FORWARD : LoopType.NONE);
 				boolean is16Bit = (type & 0x10) != 0;
 				byte panning = data.get();
 				byte relativeNote = data.get();
@@ -236,7 +263,7 @@ public class SongData {
 				data = sliceBuffer(data, (int)lengths[i]);
 			}
 			
-			return data; // TODO change to be sure it jumps to next pos
+			return data;
 		} else {
 			song.addInstrument(new Instrument().setName(instrumentName));
 			return sliceBuffer(data,headerLen);
