@@ -9,7 +9,7 @@ public class PlayerThread extends Thread {
 	
 	private static final float SAMPLE_RATE = 44100f;
 	private static final int FRAME_SIZE = 512;
-	private static final int FRAME_BUFFER_SIZE = 2;
+	private static final int FRAME_BUFFER_SIZE = 5;
 	private static final float FRAME_RATE = SAMPLE_RATE/FRAME_SIZE;
 	
 	private boolean running = true;

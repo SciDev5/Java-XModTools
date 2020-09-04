@@ -1,5 +1,6 @@
 package me.scidev5.xmodtools.player;
 
+import java.nio.DoubleBuffer;
 import java.util.Arrays;
 
 import me.scidev5.xmodtools.Constants;
@@ -34,9 +35,8 @@ public class XMAudioChannel {
 	
 	private int channelPanning = 0;
 	
-	private double currentSampleValue = 0;
-	private double lastSampleValue = 0;
-	private boolean justCutIn = false;
+	private DoubleBuffer fadeoutSamples = null;
+	private boolean justCut = false;
 	
 	// EFFECT DATA
 
@@ -105,7 +105,7 @@ public class XMAudioChannel {
 			Math.min(1, Math.max(-1, value + (1 - Math.abs(value)) * (this.panningEnv.get() / (float)0x20 - 1)));
 		
 		float deltaPanning = value-this.lastPanning;
-		this.lastPanning += Math.signum(deltaPanning) * (this.justCutIn?Math.abs(deltaPanning):Math.min(2*Constants.VOLUME_SMOOTHING_FACTOR, Math.abs(deltaPanning)));
+		this.lastPanning += Math.signum(deltaPanning) * (this.justCut?Math.abs(deltaPanning):Math.min(1f/(8*Constants.FADEOUT_SAMPLES), Math.abs(deltaPanning)));
 		return this.lastPanning;
 	}
 	private float getVolume() {
@@ -119,16 +119,21 @@ public class XMAudioChannel {
 			value = 0;
 		
 		float deltaVolume = value-this.lastVolume;
-		this.lastVolume += Math.signum(deltaVolume) * Math.min(this.justCutIn?Constants.VOLUME_CUT_FACTOR:Constants.VOLUME_SMOOTHING_FACTOR, Math.abs(deltaVolume));
+		this.lastVolume += Math.signum(deltaVolume) * Math.min((this.justCut?1f:1/16f)/Constants.FADEOUT_SAMPLES, Math.abs(deltaVolume));
 		
 		return this.lastVolume;
 	}
 	
 	public double sample() {
+		double lastSample = 0;
+		if (this.fadeoutSamples != null) {
+			if (this.fadeoutSamples.hasRemaining())
+				lastSample = this.fadeoutSamples.get();
+			else
+				this.fadeoutSamples = null;
+		}
 		if (this.sample == null) {
-			if (this.lastSampleValue != 0)
-				this.lastSampleValue -= Math.signum(this.lastSampleValue) * Math.min(Constants.VOLUME_SMOOTHING_FACTOR, Math.abs(this.lastSampleValue));
-			return this.lastSampleValue;
+			return lastSample;
 		}
 		float volume = this.getVolume();
 		
@@ -157,15 +162,12 @@ public class XMAudioChannel {
 		this.sampleNumber += (long) sampleDelay + (long) this.sampleFraction;
 		this.sampleFraction %= 1;
 		
-		if (this.lastSampleValue != 0)
-			this.lastSampleValue -= Math.signum(this.lastSampleValue) * Math.min(Constants.VOLUME_SMOOTHING_FACTOR, Math.abs(this.lastSampleValue));
-
-		this.currentSampleValue = data * volume + this.lastSampleValue;
-		return this.currentSampleValue;
+		
+		return data * volume + lastSample;
 	}
 	
-	public void preTick(int n) {
-		this.justCutIn = false;
+	public void preTick() {
+		this.justCut = false;
 	}
 	
 	public void tick(int tick) {
@@ -339,10 +341,10 @@ public class XMAudioChannel {
 			if (data == 0) data = this.memory_panningSlide;
 			else           this.memory_panningSlide = data;
 			
-			int up_PAN = data & 0xf;
-			int down_PAN = (data >> 4) & 0xf;
+			int down_PAN = data & 0xf;
+			int up_PAN = (data >> 4) & 0xf;
 			
-			this.panningSlideAmount += up_PAN > 0 ? up_PAN : down_PAN;
+			this.panningSlideAmount += up_PAN > 0 ? up_PAN : -down_PAN;
 			break;
 		case SET_PANNING_EXTCMD: 
 			this.channelPanning = 0x11 * data;
@@ -356,10 +358,10 @@ public class XMAudioChannel {
 			if (data == 0) data = this.memory_volumeSlide;
 			else           this.memory_volumeSlide = data;
 
-			int up_VOL = data & 0xf;
-			int down_VOL = (data >> 4) & 0xf;
+			int down_VOL = data & 0xf;
+			int up_VOL = (data >> 4) & 0xf;
 			
-			this.volumeSlideAmount += up_VOL > 0 ? up_VOL : down_VOL;
+			this.volumeSlideAmount += up_VOL > 0 ? up_VOL : -down_VOL;
 			break;
 		case VOLUME_SLIDE_FINE_UP: 
 			if (data == 0) data = this.memory_volumeSlideFine;
@@ -387,10 +389,10 @@ public class XMAudioChannel {
 			if (data == 0) data = this.memory_volumeSlide;
 			else           this.memory_volumeSlide = data;
 
-			int up_PORTAVOL = data & 0xf;
-			int down_PORTAVOL = (data >> 4) & 0xf;
+			int down_PORTAVOL = data & 0xf;
+			int up_PORTAVOL = (data >> 4) & 0xf;
 			
-			this.volumeSlideAmount += up_PORTAVOL > 0 ? up_PORTAVOL : down_PORTAVOL;
+			this.volumeSlideAmount += up_PORTAVOL > 0 ? up_PORTAVOL : -down_PORTAVOL;
 			break;
 		case VOLUME_SLIDE_CONT_VIBRATO: break; // TODO LFO
 		case VOLUME_SLIDE_AND_RETRIGGER_NOTE:
@@ -623,14 +625,15 @@ public class XMAudioChannel {
 	public void switchNote(int note) {
 		if (this.sample == null) return;
 
+		this.bufferFadeout();
+		
 		this.note = note + this.sample.getRelativeNote();
 		this.fineTune = this.sample.getFineTune();
 		this.pitchBend = 0;
 		this.sampleNumber = 0;
 		this.sampleFraction = 0f;
-		this.lastSampleValue = this.currentSampleValue;
 		this.lastVolume = 0f;
-		this.justCutIn = true;
+		this.justCut = true;
 	}
 	/**
 	 * Reset the sample to its start.
@@ -638,11 +641,11 @@ public class XMAudioChannel {
 	public void resetSample() {
 		if (this.sample == null) return;
 
+		this.bufferFadeout();
 		this.sampleNumber = 0;
 		this.sampleFraction = 0f;
-		this.lastSampleValue = this.currentSampleValue;
 		this.lastVolume = 0f;
-		this.justCutIn = true;
+		this.justCut = true;
 	}
 	/**
 	 * Reset the envelopes and volume of a note while it is playing.
@@ -673,15 +676,28 @@ public class XMAudioChannel {
 	 */
 	public void cut() {
 		this.channelVolume = 0;
+		this.justCut = true;
 	}
 	/**
 	 * Mute the channel by nullifying the sample.
 	 */
 	public void hardCut() {
-		this.lastSampleValue = this.currentSampleValue;
+		this.bufferFadeout();
 		this.lastVolume = 0f;
 		this.sample = null;
 		this.isHeld = false;
+		
+	}
+	
+	private void bufferFadeout() {
+		int fadeoutSize = Constants.FADEOUT_SAMPLES;
+		DoubleBuffer fadeoutSamples = DoubleBuffer.allocate(fadeoutSize);
+		for (int i = 0; i < fadeoutSize; i++) {
+			float power = (fadeoutSize-i)/(float)fadeoutSize;
+			fadeoutSamples.put(power * this.sample());
+		}
+		fadeoutSamples.position(0);
+		this.fadeoutSamples = fadeoutSamples;
 	}
 	
 	/**

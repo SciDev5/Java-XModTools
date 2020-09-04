@@ -42,10 +42,10 @@ public class Song {
 	/**
 	 * Add an instrument to the song.
 	 * @param instrument The instrument to add.
-	 * @throws IndexOutOfBoundsException If too many instruments were added.
+	 * @throws IllegalStateException If too many instruments were added.
 	 */
-	public void addInstrument(Instrument instrument) throws IndexOutOfBoundsException {
-		if (this.numInstruments >= 128) throw new IndexOutOfBoundsException("Can only have at most 128 instruments.");
+	public void addInstrument(Instrument instrument) throws IllegalStateException {
+		if (this.numInstruments >= 128) throw new IllegalStateException("Can only have at most 128 instruments.");
 		
 		this.instruments[this.numInstruments] = instrument;
 		this.numInstruments ++;
@@ -78,10 +78,10 @@ public class Song {
 	/**
 	 * Add a new pattern to the song.
 	 * @param pattern The pattern to add.
-	 * @throws IndexOutOfBoundsException If too many patterns were added.
+	 * @throws IllegalStateException If too many patterns were added.
 	 */
-	public void addPattern(Pattern pattern) throws IndexOutOfBoundsException {
-		if (this.numPatterns >= 255) throw new IndexOutOfBoundsException("Can only have at most 255 patterns.");
+	public void addPattern(Pattern pattern) throws IllegalStateException {
+		if (this.numPatterns >= 255) throw new IllegalStateException("Can only have at most 255 patterns.");
 		
 		this.patterns[this.numPatterns] = pattern;
 		this.numPatterns ++;

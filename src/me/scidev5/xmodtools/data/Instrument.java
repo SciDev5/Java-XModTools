@@ -25,8 +25,11 @@ public class Instrument {
 		Arrays.fill(this.sampleNoteMap,(byte) 0);
 	}
 	
-	// TODO get samples and stuff
-
+	/**
+	 * Get the sample corresponding to a given note.
+	 * @param note The note to look for a sample by.
+	 * @return The sample at the given note.
+	 */
 	public Sample getNoteSample(int note) {
 		// TODO error check
 		return this.samples[this.sampleNoteMap[note]];
@@ -34,29 +37,75 @@ public class Instrument {
 	
 	// SAMPLES
 
+	/**
+	 * Get a sample at a given index. If the index is out of range, the sample will be null.
+	 * @param index The index to look at.
+	 * @return The sample corresponding to the index provided.
+	 */
 	public Sample getSample(int index) {
 		if (index < 0) return null;
-		return index<this.samples.length?this.samples[index]:null;
+		return index<this.numSamples?this.samples[index]:null;
 	}
-	public void addSample(Sample sample) throws IndexOutOfBoundsException {
-		if (this.numSamples >= 128) throw new IndexOutOfBoundsException("Can only have at most 128 instruments.");
+	/**
+	 * Add a new sample.
+	 * @param sample The sample to add.
+	 * @throws IllegalStateException If the sample array is already full.
+	 */
+	public void addSample(Sample sample) throws IllegalStateException {
+		if (this.numSamples >= 256) throw new IllegalStateException("Can only have at most 256 samples.");
 		
 		this.samples[this.numSamples] = sample;
 		this.numSamples ++;
 	}
+	/**
+	 * Set a sample at an index.
+	 * @param index The index to set at.
+	 * @param sample The sample to set.
+	 * @throws IndexOutOfBoundsException If the index was less than 0 or greater than or equal to the number of samples.
+	 */
 	public void setSample(int index, Sample sample) throws IndexOutOfBoundsException {
 		if (index < 0) throw new IndexOutOfBoundsException("Index was less than 0.");
-		if (index >= this.numSamples) throw new IndexOutOfBoundsException("Index was greater or equal to numInstruments.");
+		if (index >= this.numSamples) throw new IndexOutOfBoundsException("Index was greater or equal to numSamples.");
 
 		this.samples[index] = sample;
+	}
+	/**
+	 * Remove a sample at an index.
+	 * @param index The index.
+	 * @throws IndexOutOfBoundsException If the index was less than 0 or greater than or equal to the number of samples.
+	 * @throws IllegalStateException If there are no samples to remove.
+	 */
+	public void removeSample(int index) throws IndexOutOfBoundsException, IllegalStateException {
+		if (this.numSamples <= 0) throw new IllegalStateException("Cannot remove samples because there are none.");
+		if (index < 0) throw new IndexOutOfBoundsException("Index was less than 0.");
+		if (index >= this.numSamples) throw new IndexOutOfBoundsException("Index was greater or equal to numSamples.");
+		
+		this.numSamples--;
+		for (int i = index; i < this.numSamples; i++)
+			this.samples[i] = this.samples[i+1];
 	}
 
 	// GETTERS
 	
-
+	/**
+	 * Get the number of samples added to the instrument.
+	 * @return The number of samples.
+	 */
 	public int getNumSamples()    { return this.numSamples;  }
+	/**
+	 * Get the integer value for the amount of fadeout to apply to a released note.
+	 * @return The instrument's fadeout. ($0 -> none; $ffff -> instant cut).
+	 */
 	public int getFadeout()    { return this.volumeFadeout;  }
+	/**
+	 * Get a copy of the volume envelope.
+	 * @return A copy of the instrument's volume envelope.
+	 */
 	public Envelope getVolumeEnv()    { if (this.volumeEnv != null) return this.volumeEnv.copy(); else return null; }
+	/**
+	 * Get a copy of the panning envelope.
+	 * @return A copy of the instrument's panning envelope.
+	 */
 	public Envelope getPanningEnv()    { if (this.panningEnv != null) return this.panningEnv.copy(); else return null; }
 	
 	// SETTERS

@@ -11,8 +11,8 @@ public class TestMain {
 
 	public static void main(String[] args) throws Exception {
 		
-		String[] files = new String[] {"Example Songs/milky.xm","Example Songs/sv_ttt.xm","other stuff/dev/TEST4.xm"};
-		int i = 1;
+		String[] files = new String[] {"Example Songs/milky.xm","Example Songs/sv_ttt.xm","other stuff/dev/TEST4.xm","dumb things/megalovania.xm"};
+		int i = 3;
 		
 		File root = new File("D:/Art/milkytracker-1.02.00/");
 		Song song = SongData.loadFromFile(new File(root,files[i]));
