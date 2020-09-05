@@ -13,12 +13,14 @@ import me.scidev5.xmodtools.data.Pattern;
 import me.scidev5.xmodtools.data.Pattern.PatternData;
 import me.scidev5.xmodtools.data.Sample;
 import me.scidev5.xmodtools.data.Song;
+import me.scidev5.xmodtools.player.FrequencyTable;
 import me.scidev5.xmodtools.player.automation.Envelope;
+import me.scidev5.xmodtools.player.automation.LFO;
 
 public class SongData {
 	
 	public static Song parseBytes(ByteBuffer dataIn) throws Exception {
-		ByteBuffer data = dataIn;
+		ByteBuffer data = dataIn.slice();
 		data.order(ByteOrder.LITTLE_ENDIAN);
 		
 		if (!DataUtils.getString(data, 17).equals("Extended Module: ")) {
@@ -42,7 +44,12 @@ public class SongData {
 		song.setNumChannels(data.getShort());
 		short numPatterns = data.getShort();
 		short numInstruments = data.getShort();
-		short flags = data.getShort(); // TODO select frequency tables
+		short flags = data.getShort();
+		
+		FrequencyTable frequencyTable = FrequencyTable.LINEAR;
+		if ((flags & 0x01) == 0) 
+			frequencyTable = FrequencyTable.AMIGA;
+		song.setFrequencyTable(frequencyTable);
 		
 		song.setDefaultTempo(data.getShort(),data.getShort());
 		
@@ -63,8 +70,6 @@ public class SongData {
 		for (int i = 0; i < numInstruments; i++) {
 			data = parseInstrument(data,song);
 		}
-		
-		// TODO next part
 		
 		return song;
 	}
@@ -179,12 +184,21 @@ public class SongData {
 			}
 			instrument.setPanningEnv(panningEnv);
 			
-			// TODO AUTOVIBRATO
+			// AUTOVIBRATO
 			
 			int autoVibratoType = data.get() & 0xff;
 			int autoVibratoSweep = data.get() & 0xff;
 			int autoVibratoDepth = data.get() & 0xff;
 			int autoVibratoRate = data.get() & 0xff;
+			
+			LFO autoVibrato = new LFO();
+			autoVibrato.setAmplitudeParameterFinely(autoVibratoDepth);
+			autoVibrato.setFrequencyParameter(autoVibratoRate);
+			autoVibrato.setSweep(autoVibratoSweep);
+			LFO.WaveForm autoVibratoWaveForm = LFO.WaveForm.get(autoVibratoType);
+			autoVibrato.setWaveForm(autoVibratoWaveForm == null ? LFO.WaveForm.SINE : LFO.WaveForm.get(autoVibratoType));
+			
+			instrument.setAutoVibratoLFO(autoVibrato);
 			
 			//  OTHER STUFF
 			

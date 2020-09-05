@@ -8,6 +8,9 @@ import me.scidev5.xmodtools.data.Instrument;
 import me.scidev5.xmodtools.data.Pattern.PatternData;
 import me.scidev5.xmodtools.data.Sample;
 import me.scidev5.xmodtools.player.automation.Envelope;
+import me.scidev5.xmodtools.player.automation.LFO;
+import me.scidev5.xmodtools.player.util.EffectType;
+import me.scidev5.xmodtools.player.util.SampleInterpolation;
 
 public class XMAudioChannel {
 
@@ -18,6 +21,10 @@ public class XMAudioChannel {
 
 	private Envelope volumeEnv;
 	private Envelope panningEnv;
+
+	private LFO vibratoLFO;
+	private LFO tremoloLFO;
+	private LFO autoVibratoLFO;
 
 	private float sampleFraction = 0f;
 	private long sampleNumber = 0l;
@@ -86,7 +93,13 @@ public class XMAudioChannel {
 	private int tremorOnTicks = 1;
 	private int tremorOffTicks = 0;
 	private boolean tremorMute = false;
+	private boolean tremorMuteLast = false;
 	private int tremorCounter = 0;
+
+	private boolean vibratoEnabled = false;
+	private boolean vibratoEnabledVolumeColumn = false;
+	private boolean tremoloEnabled = false;
+	private boolean tremoloOverwritten = true;
 	
 	private int arpIndex = 0;
 	private final int[] arpNotes;
@@ -94,8 +107,13 @@ public class XMAudioChannel {
 	
 	public XMAudioChannel(XMAudioController controller) {
 		this.controller = controller;
+		
 		this.arpNotes = new int[3];
 		Arrays.fill(this.arpNotes, 0);
+		
+		this.vibratoLFO = new LFO();
+		this.tremoloLFO = new LFO();
+		this.autoVibratoLFO = null;
 	}
 	
 	public float getPanning() {
@@ -115,11 +133,14 @@ public class XMAudioChannel {
 		if (this.volumeEnv != null)
 			value *= this.volumeEnv.get() / (float)0x40;
 		
+		if (!this.tremoloOverwritten)
+		value += this.tremoloLFO.get();
+		
 		if (this.tremorMute)
 			value = 0;
 		
 		float deltaVolume = value-this.lastVolume;
-		this.lastVolume += Math.signum(deltaVolume) * Math.min((this.justCut?1f:1/16f)/Constants.FADEOUT_SAMPLES, Math.abs(deltaVolume));
+		this.lastVolume += Math.signum(deltaVolume) * Math.min((this.justCut || this.tremorMute != this.tremorMuteLast ? 1f : 1/8f) / Constants.FADEOUT_SAMPLES, Math.abs(deltaVolume));
 		
 		return this.lastVolume;
 	}
@@ -140,8 +161,24 @@ public class XMAudioChannel {
 		int arpNote = 0;
 		if (arpIndex < arpNotes.length && arpIndex > 0)
 			arpNote = arpNotes[arpIndex];
-
-		double sampleDelay = FrequencyTable.LINEAR.calculateSampleRate(this.note + arpNote, this.fineTune, this.pitchBend)/this.controller.format.getSampleRate();
+		
+		FrequencyTable table = this.controller.song.getFrequencyTable();
+		double sampleDelay = (this.controller.getState().doQuantizePorta()?
+				table.calculateSampleRateGlissando(
+					this.note + arpNote, 
+					this.fineTune, 
+					this.pitchBend, 
+					(this.vibratoEnabled ? 127.5f*this.vibratoLFO.get()-0.5f : 0) + 
+					(this.autoVibratoLFO != null ? 127.5f*this.autoVibratoLFO.get()-0.5f : 0)
+				):
+				table.calculateSampleRate(
+					this.note + arpNote, 
+					this.fineTune, 
+					this.pitchBend + 
+						(this.vibratoEnabled ? 127.5f*this.vibratoLFO.get()-0.5f : 0) + 
+						(this.autoVibratoLFO != null ? 127.5f*this.autoVibratoLFO.get()-0.5f : 0)
+				)
+			)/this.controller.format.getSampleRate();
 		
 		SampleInterpolation interpolation = SampleInterpolation.LINEAR;
 		
@@ -196,24 +233,36 @@ public class XMAudioChannel {
 	private void tickEffects(int tick) {
 		if (this.sample == null) return;
 		
-		FrequencyTable ftab = FrequencyTable.LINEAR;
+		FrequencyTable frequencyTable = this.controller.song.getFrequencyTable();
 		
 		if (tick != 0) {
 			this.pitchBend -= this.portaTickAmount;
 			
-			double currentPeriod = this.pitchBend + ftab.calculatePeriod(this.note, this.fineTune);
-			double deltaPitchBend = ftab.calculatePeriod(this.portaNoteTarget, this.sample.getFineTune()) - currentPeriod;
+			double currentPeriod = this.pitchBend + frequencyTable.calculatePeriod(this.note, this.fineTune);
+			double deltaPitchBend = frequencyTable.calculatePeriod(this.portaNoteTarget, this.sample.getFineTune()) - currentPeriod;
 			this.pitchBend += Math.signum(deltaPitchBend) * Math.min(Math.abs(deltaPitchBend), this.portaNoteAmount * this.portaNotePower);
 
 			this.channelVolume = Math.max(0, Math.min(0x40, this.channelVolume + this.volumeSlideAmount));
 			this.channelPanning = Math.max(0, Math.min(0xff, this.channelPanning + this.panningSlideAmount));
 
-			
+			this.tremorMuteLast = this.tremorMute;
 			if (this.tremorOffTicks == 0) {
 				this.channelVolume = this.tremorMute ? 0 : this.channelVolume;
 				this.tremorMute = false;
-			} else
+			} else {
 				this.tremorMute = this.tremorCounter >= this.tremorOnTicks;
+				this.tremoloOverwritten = true;
+			}
+
+			if (this.vibratoEnabled) this.vibratoLFO.calculate();
+			if (this.vibratoEnabledVolumeColumn) this.vibratoLFO.calculate();
+			if (this.tremoloEnabled) {
+				this.tremoloLFO.calculate();
+				this.tremoloOverwritten = false;
+			}
+			
+			if (this.autoVibratoLFO != null)
+				this.autoVibratoLFO.calculate();
 			
 			this.tremorCounter = (this.tremorCounter + 1) % (this.tremorOnTicks+this.tremorOffTicks);
 		}
@@ -252,14 +301,12 @@ public class XMAudioChannel {
 				case 15: volume *= 2; break;
 				}
 				this.channelVolume = Math.max(0, Math.min(0x40, volume));
+				this.tremoloOverwritten = true;
 				
 				this.retriggerCounter = 0;
 			}
 		} else 
 			this.retriggerCounter = -1;
-
-		
-		// TODO LFO
 	}
 
 	public void runEffect(PatternData dataRow) {
@@ -329,9 +376,34 @@ public class XMAudioChannel {
 			}
 			break;
 		
-		// TODO LFO
-		case VIBRATO: break;
-		case TREMOLO: break;
+		case VIBRATO: 
+			int vibeDepth = data & 0xf;
+			int vibeSpeed = (data >> 4) & 0xf;
+
+			if (vibeSpeed == 0) vibeSpeed = this.memory_vibratoSpeed;
+			else                this.memory_vibratoSpeed = vibeSpeed;
+			
+			if (vibeDepth == 0) vibeDepth = this.memory_vibratoDepth;
+			else                this.memory_vibratoDepth = vibeDepth;
+			
+			this.vibratoEnabled = true;
+			this.vibratoLFO.setAmplitudeParameter(vibeDepth);
+			this.vibratoLFO.setFrequencyParameter(4*vibeSpeed);
+			break;
+		case TREMOLO: 
+			int tremoloDepth = data & 0xf;
+			int tremoloSpeed = (data >> 4) & 0xf;
+
+			if (tremoloSpeed == 0) tremoloSpeed = this.memory_tremoloSpeed;
+			else                   this.memory_tremoloSpeed = tremoloSpeed;
+			
+			if (tremoloDepth == 0) tremoloDepth = this.memory_tremoloDepth;
+			else                   this.memory_tremoloDepth = tremoloDepth;
+			
+			this.tremoloEnabled = true;
+			this.tremoloLFO.setAmplitudeParameter(tremoloDepth);
+			this.tremoloLFO.setFrequencyParameter(4*tremoloSpeed);
+			break;
 		
 		// Panning
 		case SET_PANNING: 
@@ -353,6 +425,7 @@ public class XMAudioChannel {
 		// Volume
 		case SET_VOLUME: 
 			this.channelVolume = Math.min(0x40, data);
+			this.tremoloOverwritten = true;
 			break;
 		case VOLUME_SLIDE: 
 			if (data == 0) data = this.memory_volumeSlide;
@@ -368,12 +441,14 @@ public class XMAudioChannel {
 			else           this.memory_volumeSlideFine = data;
 			
 			this.channelVolume = Math.max(0, Math.min(0x40, this.channelVolume + data));
+			this.tremoloOverwritten = true;
 			break;
 		case VOLUME_SLIDE_FINE_DOWN: 
 			if (data == 0) data = this.memory_volumeSlideFine;
 			else           this.memory_volumeSlideFine = data;
 			
 			this.channelVolume = Math.max(0, Math.min(0x40, this.channelVolume - data));
+			this.tremoloOverwritten = true;
 			break;
 		
 		// Volume slide combos
@@ -394,7 +469,17 @@ public class XMAudioChannel {
 			
 			this.volumeSlideAmount += up_PORTAVOL > 0 ? up_PORTAVOL : -down_PORTAVOL;
 			break;
-		case VOLUME_SLIDE_CONT_VIBRATO: break; // TODO LFO
+		case VOLUME_SLIDE_CONT_VIBRATO: 
+			this.vibratoEnabled = true;
+			
+			if (data == 0) data = this.memory_volumeSlide;
+			else           this.memory_volumeSlide = data;
+
+			int down_VIBVOL = data & 0xf;
+			int up_VIBVOL = (data >> 4) & 0xf;
+			
+			this.volumeSlideAmount += up_VIBVOL > 0 ? up_VIBVOL : -down_VIBVOL;
+			break;
 		case VOLUME_SLIDE_AND_RETRIGGER_NOTE:
 			this.retriggerEnabled = true;
 			if ((data & 0xf) != 0) this.memory_retriggerDelay = data & 0xf;
@@ -479,25 +564,42 @@ public class XMAudioChannel {
 		case 0x04:
 		case 0x05: // Set Volume
 			this.channelVolume = Math.min(volume - 0x10, 0x40);
+			this.tremoloOverwritten = true;
 			break;
 			
 		case 0x06: // Volume slide down.
 			this.volumeSlideAmount -= lowerNibble; 
+			this.tremoloOverwritten = true;
 			break;
 		case 0x07: // Volume slide up.
 			this.volumeSlideAmount += lowerNibble; 
+			this.tremoloOverwritten = true;
 			break;
 			
 		case 0x08: // Fine volume slide down.
 			this.channelVolume = Math.max(0, this.channelVolume - lowerNibble); 
+			this.tremoloOverwritten = true;
 			break;
 		case 0x09: // Fine volume slide up.
 			this.channelVolume = Math.min(0x40, this.channelVolume + lowerNibble);
 			break;
 			
-		case 0x0A: // TODO Set vibrato speed. (param shared with effect column)
+		case 0x0A: // Set vibrato speed. (param shared with effect column)
+			int vibeSpeed = lowerNibble;
+
+			if (vibeSpeed == 0) vibeSpeed = this.memory_vibratoSpeed;
+			else                this.memory_vibratoSpeed = vibeSpeed;
+			
+			this.vibratoLFO.setFrequencyParameter(4*vibeSpeed);
 			break;
-		case 0x0B: // TODO Run vibrato. (set depth) (param shared with effect column)
+		case 0x0B: // Run vibrato. (set depth) (param shared with effect column)
+			int vibeDepth = lowerNibble;
+			
+			if (vibeDepth == 0) vibeDepth = this.memory_vibratoDepth;
+			else                this.memory_vibratoDepth = vibeDepth;
+			
+			this.vibratoEnabled = true;
+			this.vibratoLFO.setAmplitudeParameter(vibeDepth);
 			break;
 			
 		case 0x0C: // Set panning
@@ -552,6 +654,10 @@ public class XMAudioChannel {
 
 		this.tremorOnTicks = 1;
 		this.tremorOffTicks = 0;
+		
+		this.vibratoEnabled = false;
+		this.vibratoEnabledVolumeColumn = false;
+		this.tremoloEnabled = false;
 	}
 
 	
@@ -655,6 +761,8 @@ public class XMAudioChannel {
 		
 		this.channelVolume = this.sample.getVolume();
 		this.channelPanning = this.sample.getPanning();
+		
+		this.autoVibratoLFO = this.instrument.getAutoVibratoLFO();
 		
 		if (this.volumeEnv != null)
 			this.volumeEnv.retrigger();

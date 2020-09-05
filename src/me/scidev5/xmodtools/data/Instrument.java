@@ -107,6 +107,11 @@ public class Instrument {
 	 * @return A copy of the instrument's panning envelope.
 	 */
 	public Envelope getPanningEnv()    { if (this.panningEnv != null) return this.panningEnv.copy(); else return null; }
+	/**
+	 * Get a copy of the autoVibrato LFO.
+	 * @return A copy of the instrument's autoVibrato LFO.
+	 */
+	public LFO getAutoVibratoLFO()    { if (this.autoVibrato != null) return this.autoVibrato.copy(); else return null; }
 	
 	// SETTERS
 	

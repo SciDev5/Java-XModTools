@@ -2,6 +2,8 @@ package me.scidev5.xmodtools.data;
 
 import java.util.Arrays;
 
+import me.scidev5.xmodtools.player.FrequencyTable;
+
 public class Song {
 	protected final Instrument[] instruments;
 	protected final Pattern[] patterns;
@@ -17,6 +19,8 @@ public class Song {
 	
 	protected int numInstruments = 0;
 	protected int numPatterns = 0;
+
+	protected FrequencyTable frequencyTable = FrequencyTable.LINEAR;
 	
 	public Song() {
 		this.instruments = new Instrument[128];
@@ -145,6 +149,8 @@ public class Song {
 	public String getModuleName()  { return this.moduleName;   }
 	/** Get the name of the tracker which created / edited the song. */
 	public String getTrackerName() { return this.trackerName;  }
+	/** Get the frequency table used for playing back the song. */
+	public FrequencyTable getFrequencyTable() { return this.frequencyTable;  }
 	
 	// SETTERS
 	
@@ -168,12 +174,15 @@ public class Song {
 		if (this.moduleName == null) this.moduleName = "";
 		this.moduleName = this.moduleName.trim();
 		if (this.moduleName.length() > 20) this.moduleName.substring(0, 20);
+		
+		if (this.frequencyTable == null)
+			this.frequencyTable = FrequencyTable.LINEAR;
 	}
 
 	/**
 	 * Set the length of the song to build (in pattern table)
 	 * @param length The length of the song. Range (1-256)
-	 * @return this builder.
+	 * @return this song.
 	 */
 	public Song setSongLength(short length) {
 		this.songLength = clamp(length & 0xffff, 1, 256);
@@ -182,7 +191,7 @@ public class Song {
 	/**
 	 * Set the songs restart position when it loops.
 	 * @param loopPos The restart position to set
-	 * @return this builder.
+	 * @return this song.
 	 */
 	public Song setSongLoopPos(short loopPos) {
 		this.songLoopPos = clamp(loopPos & 0xffff,0,this.songLength-1);
@@ -191,7 +200,7 @@ public class Song {
 	/**
 	 * Set the number of channels in the song.
 	 * @param numChannels The number of channels for the song.
-	 * @return this builder.
+	 * @return this song.
 	 */
 	public Song setNumChannels(int numChannels) {
 		this.numChannels = numChannels < 0 ? 32 : clamp(numChannels/2,1,0x20)*2;
@@ -201,7 +210,7 @@ public class Song {
 	 * Set the default tempo (speed and bpm) of the song.
 	 * @param speed The default speed (number of ticks per row).
 	 * @param bpm The default bpm (tick duration = 2500ms / bpm).
-	 * @return this builder.
+	 * @return this song.
 	 */
 	public Song setDefaultTempo(int speed, int bpm) {
 		this.defaultSpeed = speed < 0 ? 0x1f : clamp(speed,1,0x1f);
@@ -224,7 +233,7 @@ public class Song {
 	/**
 	 * Set the name of the module (eg. the name of the song).
 	 * @param name The name of the module (song).
-	 * @return this builder.
+	 * @return this song.
 	 */
 	public Song setModuleName(String name) { 
 		this.moduleName = name;
@@ -234,6 +243,15 @@ public class Song {
 		if (this.moduleName.length() > 20) this.moduleName.substring(0, 20);
 		return this;
 	}
-	
+	/**
+	 * Set the frequency table used for playing back the song.
+	 * @param frequencyTable The frequency table.
+	 * @return This song.
+	 */
+	public Song setFrequencyTable(FrequencyTable frequencyTable) {
+		if (frequencyTable != null)
+			this.frequencyTable = frequencyTable;
+		return this;
+	}
 	
 }

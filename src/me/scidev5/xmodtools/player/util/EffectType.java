@@ -1,4 +1,4 @@
-package me.scidev5.xmodtools.player;
+package me.scidev5.xmodtools.player.util;
 
 public enum EffectType {
 	// Arpeggio

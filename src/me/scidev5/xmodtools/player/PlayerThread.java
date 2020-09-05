@@ -1,5 +1,8 @@
 package me.scidev5.xmodtools.player;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.LineUnavailableException;
@@ -7,27 +10,72 @@ import javax.sound.sampled.SourceDataLine;
 
 public class PlayerThread extends Thread {
 	
-	private static final float SAMPLE_RATE = 44100f;
-	private static final int FRAME_SIZE = 512;
-	private static final int FRAME_BUFFER_SIZE = 5;
-	private static final float FRAME_RATE = SAMPLE_RATE/FRAME_SIZE;
+	private final float SAMPLE_RATE;
+	private final int FRAME_SIZE;
+	private final int FRAME_BUFFER_SIZE;
+	private final float FRAME_RATE;
 	
 	private boolean running = true;
 	private boolean ended = false;
 	private AudioFormat audioFormat = null;
 	
+	private List<IAudioPostProcesser> postProcessers;
+	
 	private XMAudioController controller = null;
 	
-	public PlayerThread() {
+	/**
+	 * Construct a new playerThread with custom audio parameters.
+	 * @param sampleRate The rate at which samples are generated and played. (Default: 44100)
+	 * @param frameSize The size of each frame. Smaller = little to no delay, inefficient; Larger = more delay, but more efficient. (Default: 512)
+	 * @param frameBufferSize The amount of frames to buffer ahead so the sourceDataLine does not run empty. (Same tradeoffs as frameSize, default: 5)
+	 */
+	public PlayerThread(float sampleRate, int frameSize, int frameBufferSize) {
+		this.SAMPLE_RATE = sampleRate;
+		this.FRAME_SIZE = frameSize;
+		this.FRAME_BUFFER_SIZE = frameBufferSize;
+		this.FRAME_RATE = this.SAMPLE_RATE/this.FRAME_SIZE;
+		
 		this.audioFormat = new AudioFormat(SAMPLE_RATE,16,2,true,false);
+		
+		this.postProcessers = new ArrayList<>();
+	}
+	/**
+	 * Construct a new playerThread with custom sample rate. (Frame size and rate are defaulted to 512 and 5 respectively).
+	 * @param sampleRate The rate at which samples are generated and played. (Default: 44100)
+	 */
+	public PlayerThread(float sampleRate) {
+		this(sampleRate, 512, 5);
+	}
+	/**
+	 * Construct a new playerThread with generic audio parameters. 
+	 * (Sample rate, frame size, and rate are defaulted to 44100, 512, and 5 respectively).
+	 */
+	public PlayerThread() {
+		this(44100f);
 	}
 	
+	/**
+	 * Set the XMAudioController responsible for rendering audio
+	 * @param controller
+	 */
 	public void setController(XMAudioController controller) {
 		this.controller = controller;
 	}
 	
+	/**
+	 * Get the audio format 
+	 * @return
+	 */
 	public AudioFormat getAudioFormat() {
 		return this.audioFormat;
+	}
+	
+	/**
+	 * Get post processer list that can be modified to add new postProcessers.
+	 * @return The postProcesser list.
+	 */
+	public List<IAudioPostProcesser> getPostProcesserList() {
+		return this.postProcessers;
 	}
 	
 	@Override
@@ -76,7 +124,7 @@ public class PlayerThread extends Thread {
 		if (inDataR.length != FRAME_SIZE) throw new IllegalArgumentException();
 		if (buffer.length != FRAME_SIZE*4) throw new IllegalArgumentException();
 		
-		final int volume = 1;
+		final int volume = 0;
 		
 		for (int i = 0; i < FRAME_SIZE; i++) {
 			buffer[4*i+0] = (byte) ((inDataL[i]>>(0+volume)) & 0xff);
@@ -92,6 +140,10 @@ public class PlayerThread extends Thread {
 		short[] dataR = new short[FRAME_SIZE];
 		
 		this.controller.render(dataL, dataR);
+		
+		for (IAudioPostProcesser processer : this.postProcessers)
+			if (processer != null)
+				processer.processData(dataL, dataR);
 		
 		transferFrame(dataL, dataR, buffer);
 	}

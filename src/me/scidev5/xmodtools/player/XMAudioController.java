@@ -7,6 +7,7 @@ import javax.sound.sampled.AudioFormat;
 
 import me.scidev5.xmodtools.data.Pattern;
 import me.scidev5.xmodtools.data.Pattern.PatternData;
+import me.scidev5.xmodtools.player.util.EffectType;
 import me.scidev5.xmodtools.data.Song;
 
 public class XMAudioController {
@@ -16,6 +17,8 @@ public class XMAudioController {
 	private long sampleNext = 0;
 	/** If the XMAController should automatically tick itself. */
 	public boolean autoTick = true;
+	
+	private float sampleVolumeScale = 0.5f;
 	
 	private boolean isRendering = false;
 	private Thread renderThread = null;
@@ -42,6 +45,23 @@ public class XMAudioController {
 		this.state.setTempo(this.song.getDefaultBPM(), this.song.getDefaultSpeed());
 	}
 
+
+	/**
+	 * Set the volume factor that is multiplied by all samples to prevent audio clipping.
+	 * @param volumeScale The factor to multiply all samples by. (Range 0 (mute) - 1 (full volume))
+	 */
+	public void setVolumeScale(float volumeScale) {
+		this.sampleVolumeScale = volumeScale;
+	}
+	/**
+	 * Get the volume factor that is multiplied by all samples to prevent audio clipping.
+	 * @return The factor to multiply all samples by.
+	 */
+	public float getVolumeScale() {
+		return this.sampleVolumeScale;
+	}
+	
+	
 	/**
 	 * Trigger a tick indirectly
 	 */
@@ -100,8 +120,7 @@ public class XMAudioController {
 		if (dataL.length != dataR.length)
 			throw new IllegalArgumentException("Audio channel arrays had different lengths!");
 		
-		final double cfac = 0.5;
-		double fac = cfac * Math.max(0f, Math.min(1f, this.globalVolume() / (float)0x40));
+		double fac = 0.75*this.sampleVolumeScale * Math.max(0f, Math.min(1f, this.globalVolume() / (float)0x40));
 		
 		renderThread = Thread.currentThread();
 		isRendering = true;
@@ -121,7 +140,7 @@ public class XMAudioController {
 			
 			if (Thread.currentThread().isInterrupted() || sampleNow++ > sampleNext) {
 				tick();
-				fac = cfac * Math.max(0f, Math.min(1f, this.globalVolume() / (float)0x40));
+				fac = 0.75*this.sampleVolumeScale * Math.max(0f, Math.min(1f, this.globalVolume() / (float)0x40));
 			}
 		}
 		isRendering = false;
@@ -181,8 +200,6 @@ public class XMAudioController {
 
 			int down = data & 0xf;
 			int up = (data >> 4) & 0xf;
-			
-			System.out.println(up+","+down);
 			
 			this.state.globalVolumeSlide = up > 0 ? up : -down;
 			break;
