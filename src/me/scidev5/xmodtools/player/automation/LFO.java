@@ -16,7 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
  * License file should be called "COPYING" which is in the root of the
- * master branch of theGitHub repositiory (https://github.com/SciDev5/Java-XModTools).
+ * master branch of the GitHub repositiory (https://github.com/SciDev5/Java-XModTools).
  */
 
 package me.scidev5.xmodtools.player.automation;
